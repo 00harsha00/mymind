@@ -1,0 +1,17 @@
+.env
+.env.local
+.env.production
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+node_modules/
+.next/
+.vercel/
+.DS_Store
+*.log
+uploads/temp/
+*.egg-info/
+dist/
+build/

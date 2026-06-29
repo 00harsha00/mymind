@@ -8,6 +8,14 @@ export interface ChatRequest {
   attachments?: Array<{ type: string; content: string; filename?: string }>;
   features: Record<string, boolean>;
   personalization?: Record<string, string>;
+  is_first_message?: boolean;
+}
+
+export class ChatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChatError";
+  }
 }
 
 export async function streamChat(
@@ -18,16 +26,25 @@ export async function streamChat(
   signal?: AbortSignal,
   onFollowUps?: (suggestions: string[]) => void,
   onSources?: (sources: string[]) => void,
+  onError?: (message: string) => void,
 ) {
-  const res = await fetch(`${BACKEND}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-    signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") throw err;
+    throw new ChatError("Cannot connect to server. Make sure the backend is running.");
+  }
 
-  if (!res.ok) throw new Error(`Backend error: ${res.status}`);
-  if (!res.body) throw new Error("No response body");
+  if (res.status === 401) throw new ChatError("Please sign in again — your session has expired.");
+  if (res.status === 429) throw new ChatError("API rate limit reached. Please wait a moment and try again.");
+  if (!res.ok) throw new ChatError(`Server error (${res.status}). Please try again.`);
+  if (!res.body) throw new ChatError("No response from server.");
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -49,8 +66,9 @@ export async function streamChat(
         else if (evt.type === "cost") onCost(evt);
         else if (evt.type === "follow_ups") onFollowUps?.(evt.suggestions);
         else if (evt.type === "sources") onSources?.(evt.sources);
+        else if (evt.type === "error") onError?.(evt.message);
         else if (evt.type === "done") onDone();
-      } catch {}
+      } catch { /* malformed JSON line — skip */ }
     }
   }
 }

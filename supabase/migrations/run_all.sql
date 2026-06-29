@@ -60,7 +60,8 @@ create table if not exists public.chats (
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   total_tokens integer default 0,
-  total_cost_usd numeric(10,6) default 0
+  total_cost_usd numeric(10,6) default 0,
+  is_pinned boolean default false
 );
 
 alter table public.chats enable row level security;

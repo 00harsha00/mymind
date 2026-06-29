@@ -17,6 +17,7 @@ interface Command {
 interface CommandPaletteProps {
   onNewChat: () => void;
   onExport: () => void;
+  onExportPdf?: () => void;
 }
 
 function fuzzy(query: string, target: string): boolean {
@@ -41,7 +42,7 @@ const FEATURE_META: { key: keyof Features; label: string; icon: React.ElementTyp
   { key: "agent_mode", label: "Agent mode", icon: Bot },
 ];
 
-export function CommandPalette({ onNewChat, onExport }: CommandPaletteProps) {
+export function CommandPalette({ onNewChat, onExport, onExportPdf }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
@@ -91,11 +92,18 @@ export function CommandPalette({ onNewChat, onExport }: CommandPaletteProps) {
       keywords: "preferences account",
     },
     {
-      id: "export",
-      label: "Export chat",
+      id: "export-md",
+      label: "Export as Markdown",
       icon: Download,
       action: () => { onExport(); close(); },
-      keywords: "download save markdown pdf",
+      keywords: "download save markdown",
+    },
+    {
+      id: "export-pdf",
+      label: "Export as PDF",
+      icon: Download,
+      action: () => { onExportPdf?.(); close(); },
+      keywords: "download save pdf print",
     },
     ...FEATURE_META.map(({ key, label, icon }) => ({
       id: `toggle-${key}`,

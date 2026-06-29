@@ -50,6 +50,7 @@ interface AppState {
   features: Features;
   sessionCost: number;
   isLoading: boolean;
+  isChatsLoading: boolean;
   theme: "dark" | "light";
   user: User | null;
   sidebarOpen: boolean;
@@ -62,6 +63,7 @@ interface AppState {
   setModel: (model: string) => void;
   toggleFeature: (key: keyof Features) => void;
   setLoading: (val: boolean) => void;
+  setChatsLoading: (val: boolean) => void;
   addSessionCost: (cost: number) => void;
   setTheme: (t: "dark" | "light") => void;
   setUser: (user: User | null) => void;
@@ -85,6 +87,7 @@ export const useStore = create<AppState>((set) => ({
   },
   sessionCost: 0,
   isLoading: false,
+  isChatsLoading: false,
   theme: "dark",
   user: null,
   sidebarOpen: true,
@@ -119,12 +122,13 @@ export const useStore = create<AppState>((set) => ({
       if (s.user) {
         import("@/lib/supabase").then(({ createClient }) => {
           const sb = createClient();
-          sb.from("users").update({ settings: { features: next } }).eq("id", s.user!.id);
+          sb.from("users").upsert({ id: s.user!.id, settings: { features: next } }, { onConflict: "id" });
         });
       }
       return { features: next };
     }),
   setLoading: (val) => set({ isLoading: val }),
+  setChatsLoading: (val) => set({ isChatsLoading: val }),
   addSessionCost: (cost) => set((s) => ({ sessionCost: s.sessionCost + cost })),
   setTheme: (theme) => {
     document.documentElement.setAttribute("data-theme", theme);

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
-import { Copy, Check, ExternalLink, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Copy, Check, ExternalLink, ThumbsUp, ThumbsDown, RefreshCw } from "lucide-react";
 import { StreamingCursor } from "./StreamingCursor";
 import { CodeBlock } from "./CodeBlock";
 import { CostBadge } from "@/components/ui/CostBadge";
@@ -11,10 +11,12 @@ import type { Message } from "@/lib/store";
 interface MessageBubbleProps {
   message: Message;
   onSuggestion?: (text: string) => void;
+  isLast?: boolean;
+  onRegenerate?: () => void;
 }
 
 
-export function MessageBubble({ message, onSuggestion }: MessageBubbleProps) {
+export function MessageBubble({ message, onSuggestion, isLast, onRegenerate }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<"up" | "down" | null>(null);
   const isUser = message.role === "user";
@@ -86,6 +88,18 @@ export function MessageBubble({ message, onSuggestion }: MessageBubbleProps) {
                   {copied ? <Check size={12} /> : <Copy size={12} />}
                   {copied ? "Copied" : "Copy"}
                 </button>
+                {/* Regenerate button — last assistant message only */}
+                {isLast && onRegenerate && (
+                  <button
+                    onClick={onRegenerate}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
+                    style={{ color: "var(--mm-text-muted)", fontSize: "11px" }}
+                    title="Regenerate response"
+                  >
+                    <RefreshCw size={12} />
+                    Regenerate
+                  </button>
+                )}
                 {/* Reaction buttons */}
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-auto">
                   <button

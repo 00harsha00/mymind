@@ -11,18 +11,16 @@ import { CommandPalette } from "@/components/ui/CommandPalette";
 import { useChat } from "@/lib/hooks/useChat";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { createClient } from "@/lib/supabase";
-import { exportAsMarkdown } from "@/lib/utils/exportChat";
-import type { Message, Attachment } from "@/lib/store";
+import { exportAsMarkdown, exportAsPdf } from "@/lib/utils/exportChat";
+import type { Attachment } from "@/lib/store";
 import type { UploadResult } from "@/components/input/FileUploadZone";
 import { Toaster } from "sonner";
 
 function ChatApp() {
-  const { send, stop } = useChat();
+  const { send, stop, loadChat } = useChat();
   const { user } = useAuth();
   const { messages, isLoading, clearMessages, sidebarOpen, setUser } = useStore();
   const [prefill, setPrefill] = useState("");
-  const [loadedMessages, setLoadedMessages] = useState<Message[]>([]);
   const [droppedAttachments, setDroppedAttachments] = useState<Attachment[]>([]);
 
   useEffect(() => {
@@ -31,36 +29,25 @@ function ChatApp() {
 
   const handleNewChat = useCallback(() => {
     clearMessages();
-    setLoadedMessages([]);
   }, [clearMessages]);
 
-  const handleExport = useCallback(() => {
-    const displayMsgs = messages.length > 0 ? messages : loadedMessages;
-    exportAsMarkdown(displayMsgs);
-  }, [messages, loadedMessages]);
-
   const handleSelectChat = useCallback(async (chatId: string) => {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("chat_id", chatId)
-      .order("created_at", { ascending: true });
-    if (data) {
-      const msgs: Message[] = data.map((m) => ({
-        id: m.id,
-        role: m.role as "user" | "assistant",
-        content: m.content,
-        attachments: m.attachments,
-        tokensUsed: m.tokens_used,
-        costUsd: m.cost_usd,
-        createdAt: new Date(m.created_at),
-      }));
-      setLoadedMessages(msgs);
-    }
-  }, []);
+    await loadChat(chatId);
+  }, [loadChat]);
 
-  const displayMessages = messages.length > 0 ? messages : loadedMessages;
+  const handleExport = useCallback(() => {
+    exportAsMarkdown(messages);
+  }, [messages]);
+
+  const handleExportPdf = useCallback(() => {
+    exportAsPdf(messages);
+  }, [messages]);
+
+  const handleRegenerate = useCallback(() => {
+    // Find last user message and re-send it
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (lastUser) send(lastUser.content, lastUser.attachments ?? []);
+  }, [messages, send]);
 
   return (
     <div
@@ -72,6 +59,7 @@ function ChatApp() {
         theme="dark"
         toastOptions={{ style: { background: "var(--mm-bg-elevated)", border: "1px solid var(--mm-border-strong)", color: "var(--mm-text-primary)" } }}
       />
+
       {/* Mobile overlay */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -85,16 +73,12 @@ function ChatApp() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar — desktop always visible, mobile overlay */}
-      <div
-        className={`
-          hidden md:flex flex-col h-full flex-shrink-0
-        `}
-      >
+      {/* Sidebar — desktop */}
+      <div className="hidden md:flex flex-col h-full flex-shrink-0">
         <Sidebar onNewChat={handleNewChat} onSelectChat={handleSelectChat} />
       </div>
 
-      {/* Mobile sidebar */}
+      {/* Sidebar — mobile */}
       <AnimatePresence>
         {sidebarOpen && (
           <motion.div
@@ -109,8 +93,7 @@ function ChatApp() {
         )}
       </AnimatePresence>
 
-      {/* Command Palette */}
-      <CommandPalette onNewChat={handleNewChat} onExport={handleExport} />
+      <CommandPalette onNewChat={handleNewChat} onExport={handleExport} onExportPdf={handleExportPdf} />
 
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
@@ -127,12 +110,12 @@ function ChatApp() {
           }}
         >
           <ChatWindow
-            messages={displayMessages}
+            messages={messages}
             onSuggestion={(text) => setPrefill(text)}
+            onRegenerate={handleRegenerate}
           />
           <InputBar
             onSend={(text, atts) => {
-              setLoadedMessages([]);
               setDroppedAttachments([]);
               send(text, atts);
             }}

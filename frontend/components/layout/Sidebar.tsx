@@ -36,7 +36,7 @@ function groupChats(chats: Chat[]): Record<string, Chat[]> {
 
 export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
   const { user, signOut } = useAuth();
-  const { chats, setChats, currentChatId, setCurrentChat } = useStore();
+  const { chats, setChats, currentChatId, setCurrentChat, toggleSidebar } = useStore();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const router = useRouter();
@@ -46,7 +46,7 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
     const supabase = createClient();
     supabase
       .from("chats")
-      .select("id, title, updated_at, total_cost_usd")
+      .select("id, title, updated_at, total_cost_usd, is_pinned")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
       .then(({ data }) => {
@@ -56,6 +56,7 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
             title: c.title,
             updatedAt: new Date(c.updated_at),
             totalCostUsd: c.total_cost_usd || 0,
+            pinned: c.is_pinned ?? false,
           })));
         }
       });
@@ -74,8 +75,16 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
     setChats(chats.map((c) => c.id === chatId ? { ...c, title: newTitle } : c));
   };
 
-  const handlePin = (chatId: string) => {
-    setChats(chats.map((c) => c.id === chatId ? { ...c, pinned: !c.pinned } : c));
+  const handlePin = async (chatId: string) => {
+    const chat = chats.find((c) => c.id === chatId);
+    const newPinned = !chat?.pinned;
+    setChats(chats.map((c) => c.id === chatId ? { ...c, pinned: newPinned } : c));
+    const supabase = createClient();
+    await supabase.from("chats").update({ is_pinned: newPinned }).eq("id", chatId);
+  };
+
+  const closeMobileSidebar = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) toggleSidebar();
   };
 
   const visibleChats = search.trim()
@@ -108,7 +117,7 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
       {/* New chat */}
       <div className="px-3 pt-3 pb-2">
         <button
-          onClick={onNewChat}
+          onClick={() => { onNewChat(); closeMobileSidebar(); }}
           className="w-full flex items-center gap-2 px-3 py-2.5 rounded-[8px] font-medium transition-all"
           style={{ background: "var(--mm-accent)", color: "#fff", fontSize: "13px" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "var(--mm-accent-hover)")}
@@ -154,7 +163,7 @@ export function Sidebar({ onNewChat, onSelectChat }: SidebarProps) {
                   chat={chat}
                   active={currentChatId === chat.id}
                   pinned={chat.pinned}
-                  onClick={() => { setCurrentChat(chat.id); onSelectChat(chat.id); }}
+                  onClick={() => { setCurrentChat(chat.id); onSelectChat(chat.id); closeMobileSidebar(); }}
                   onDelete={() => handleDeleteChat(chat.id)}
                   onRename={(title) => handleRename(chat.id, title)}
                   onPin={() => handlePin(chat.id)}

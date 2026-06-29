@@ -30,3 +30,4 @@ class ChatRequest(BaseModel):
     attachments: List[Attachment] = []
     features: Features = Features()
     personalization: Optional[Personalization] = None
+    is_first_message: bool = False

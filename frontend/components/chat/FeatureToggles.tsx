@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Zap, Search, Quote, Brain, MessageSquarePlus, Cpu, Code2, Bot, ChevronDown, HelpCircle, X } from "lucide-react";
 import { useState } from "react";
 import { useStore, type Features } from "@/lib/store";
+import { toast } from "sonner";
 
 interface ToggleDef {
   key: keyof Features;
@@ -89,8 +90,32 @@ const TOGGLES: ToggleDef[] = [
   },
 ];
 
-export function FeatureToggles() {
+const TOAST_STYLE = {
+  style: {
+    background: "var(--mm-bg-elevated)",
+    border: "1px solid var(--mm-border-strong)",
+    color: "var(--mm-text-primary)",
+  },
+};
+
+function useSmartToggle() {
   const { features, toggleFeature } = useStore();
+  return (key: keyof Features) => {
+    // Enabling Cite Sources requires Web Search
+    if (key === "cite_sources" && !features.cite_sources && !features.web_search) {
+      toggleFeature("web_search");
+      toast.info("Web Search enabled automatically — Cite Sources needs it to find references.", {
+        duration: 4000,
+        ...TOAST_STYLE,
+      });
+    }
+    toggleFeature(key);
+  };
+}
+
+export function FeatureToggles() {
+  const { features } = useStore();
+  const smartToggle = useSmartToggle();
   const [open, setOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [tooltip, setTooltip] = useState<string | null>(null);
@@ -193,7 +218,7 @@ export function FeatureToggles() {
 
                         {/* Toggle pill */}
                         <button
-                          onClick={() => toggleFeature(key)}
+                          onClick={() => smartToggle(key)}
                           className="w-8 h-4 rounded-full flex-shrink-0 relative transition-colors"
                           style={{ background: on ? color : "var(--mm-border-strong)" }}
                         >

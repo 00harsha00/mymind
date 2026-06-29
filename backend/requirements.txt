@@ -17,6 +17,6 @@ pydantic-settings==2.2.1
 supabase>=2.4.6
 psycopg2-binary>=2.9.9
 duckduckgo-search>=6.0.0
-openai-whisper>=20231117
+faster-whisper==1.0.3
 spacy>=3.7.0
 llmlingua>=0.2.0

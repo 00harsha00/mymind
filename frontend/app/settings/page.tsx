@@ -4,7 +4,7 @@ import { AuthGuard } from "@/components/auth/AuthGuard";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useStore } from "@/lib/store";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
-import { ArrowLeft, Trash2, Brain, DollarSign } from "lucide-react";
+import { ArrowLeft, Trash2, Brain, DollarSign, BarChart2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { toast, Toaster } from "sonner";
@@ -27,6 +27,9 @@ function SettingsApp() {
   const [budgetLimit, setBudgetLimit] = useState("");
   const [savingBudget, setSavingBudget] = useState(false);
 
+  // Usage stats
+  const [usageStats, setUsageStats] = useState<{ totalMessages: number; totalCost: number; thisMonthCost: number } | null>(null);
+
   useEffect(() => {
     if (!user) return;
     setLoadingMemories(true);
@@ -34,7 +37,7 @@ function SettingsApp() {
     sb.from("memory").select("id, key, value").eq("user_id", user.id).order("created_at", { ascending: false })
       .then(({ data }) => { setMemories(data ?? []); setLoadingMemories(false); });
 
-    // Load personalization from Supabase users.settings
+    // Load personalization + model from Supabase users.settings
     sb.from("users").select("settings").eq("id", user.id).single()
       .then(({ data }) => {
         if (data?.settings?.personalization) {
@@ -47,8 +50,23 @@ function SettingsApp() {
         if (data?.settings?.budgetLimitUsd != null) {
           setBudgetLimit(String(data.settings.budgetLimitUsd));
         }
+        if (data?.settings?.model) {
+          setModel(data.settings.model);
+        }
       });
-  }, [user]);
+
+    // Load usage stats
+    const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0);
+    Promise.all([
+      sb.from("messages").select("cost_usd").eq("role", "assistant"),
+      sb.from("messages").select("cost_usd").eq("role", "assistant").gte("created_at", start.toISOString()),
+      sb.from("messages").select("id", { count: "exact", head: true }),
+    ]).then(([all, month, count]) => {
+      const totalCost = (all.data ?? []).reduce((s: number, m: { cost_usd?: number }) => s + (m.cost_usd ?? 0), 0);
+      const thisMonthCost = (month.data ?? []).reduce((s: number, m: { cost_usd?: number }) => s + (m.cost_usd ?? 0), 0);
+      setUsageStats({ totalMessages: count.count ?? 0, totalCost, thisMonthCost });
+    });
+  }, [user, setModel]);
 
   const deleteMemory = async (id: string) => {
     const sb = createClient();
@@ -295,7 +313,15 @@ function SettingsApp() {
           ].map((m, i) => (
             <button
               key={m.id}
-              onClick={() => setModel(m.id)}
+              onClick={async () => {
+                setModel(m.id);
+                if (user) {
+                  const sb = createClient();
+                  const { data } = await sb.from("users").select("settings").eq("id", user.id).single();
+                  await sb.from("users").upsert({ id: user.id, settings: { ...(data?.settings ?? {}), model: m.id } });
+                  toast.success(`Switched to ${m.label}`);
+                }
+              }}
               className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors"
               style={{
                 borderTop: i > 0 ? "1px solid var(--mm-border)" : "none",
@@ -373,6 +399,33 @@ function SettingsApp() {
             )}
           </div>
         </section>
+
+        {/* Usage & Stats */}
+        <Section title="Usage & Stats">
+          {usageStats === null ? (
+            <div className="px-4 py-4 text-center" style={{ color: "var(--mm-text-muted)", fontSize: "13px" }}>Loading…</div>
+          ) : (
+            <>
+              {[
+                { label: "Total messages", value: String(usageStats.totalMessages), icon: BarChart2 },
+                { label: "Total spend (all time)", value: `$${usageStats.totalCost.toFixed(4)}`, icon: DollarSign },
+                { label: "Spend this month", value: `$${usageStats.thisMonthCost.toFixed(4)}`, icon: DollarSign },
+              ].map(({ label, value, icon: Icon }, i) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between px-4 py-3"
+                  style={{ borderTop: i > 0 ? "1px solid var(--mm-border)" : "none" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon size={13} style={{ color: "var(--mm-accent)" }} />
+                    <span style={{ color: "var(--mm-text-secondary)", fontSize: "13px" }}>{label}</span>
+                  </div>
+                  <span style={{ color: "var(--mm-text-primary)", fontSize: "13px", fontWeight: 500 }}>{value}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </Section>
 
         {/* Keyboard shortcuts */}
         <Section title="Keyboard Shortcuts">

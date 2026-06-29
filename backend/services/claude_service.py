@@ -186,29 +186,46 @@ async def stream_chat(request, history=None, supabase_client=None):
 
     # ── Stream from Claude ──────────────────────────────────────────────────
     full_response = ""
-    async with client.messages.stream(
-        model=request.model,
-        max_tokens=4096,
-        messages=messages,
-        system=system,
-    ) as stream:
-        async for text in stream.text_stream:
-            full_response += text
-            yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
+    usage = None
+    cost = 0.0
 
-        final = await stream.get_final_message()
-        usage = final.usage
-        cost = calculate_cost(request.model, usage.input_tokens, usage.output_tokens)
+    try:
+        async with client.messages.stream(
+            model=request.model,
+            max_tokens=4096,
+            messages=messages,
+            system=system,
+        ) as stream:
+            async for text in stream.text_stream:
+                full_response += text
+                yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
 
-        cost_payload: dict = {
-            "type": "cost",
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "cost_usd": cost,
-        }
-        if tokens_saved is not None:
-            cost_payload["tokens_saved"] = tokens_saved
-        yield f"data: {json.dumps(cost_payload)}\n\n"
+            final = await stream.get_final_message()
+            usage = final.usage
+            cost = calculate_cost(request.model, usage.input_tokens, usage.output_tokens)
+
+            cost_payload: dict = {
+                "type": "cost",
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cost_usd": cost,
+            }
+            if tokens_saved is not None:
+                cost_payload["tokens_saved"] = tokens_saved
+            yield f"data: {json.dumps(cost_payload)}\n\n"
+
+    except Exception as e:
+        err_str = str(e)
+        if "rate_limit" in err_str.lower() or "429" in err_str:
+            msg = "API rate limit reached. Please wait a moment and try again."
+        elif "authentication" in err_str.lower() or "401" in err_str:
+            msg = "API authentication error. Please contact support."
+        elif "overloaded" in err_str.lower() or "529" in err_str:
+            msg = "Claude is currently overloaded. Please try again in a few seconds."
+        else:
+            msg = f"Claude API error: {err_str[:120]}"
+        yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
+        return
 
     # ── Cite sources ────────────────────────────────────────────────────────
     if request.features.cite_sources and search_sources:
@@ -221,7 +238,26 @@ async def stream_chat(request, history=None, supabase_client=None):
         if suggestions:
             yield f"data: {json.dumps({'type': 'follow_ups', 'suggestions': suggestions})}\n\n"
 
-    # ── Memory: extract & save facts from user message ──────────────────────
+    # ── Save assistant response to Supabase ─────────────────────────────────
+    # (User message was already saved in routes/chat.py before streaming)
+    if request.chat_id and request.user_id and supabase_client and usage and full_response:
+        try:
+            supabase_client.from_("messages").insert({
+                "chat_id": request.chat_id,
+                "role": "assistant",
+                "content": full_response,
+                "tokens_used": usage.input_tokens + usage.output_tokens,
+                "cost_usd": cost,
+                "features_used": {"tokens_saved": tokens_saved or 0},
+            }).execute()
+            supabase_client.from_("chats").update({
+                "updated_at": "now()",
+                "total_cost_usd": cost,
+            }).eq("id", request.chat_id).execute()
+        except Exception:
+            pass  # non-fatal
+
+    # ── Memory: extract & save facts ────────────────────────────────────────
     if request.features.memory and request.user_id and supabase_client:
         try:
             from services.memory_service import extract_and_save_memory

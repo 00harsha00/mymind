@@ -13,7 +13,7 @@ export function CostDashboard() {
   const [monthlyCost, setMonthlyCost] = useState<number | null>(null);
   const [tokensSavedTotal, setTokensSavedTotal] = useState(0);
 
-  // Fetch monthly cost from backend when expanded or on mount
+  // Fetch monthly cost once on mount (when user is known)
   useEffect(() => {
     if (!user) return;
     fetch(`${BACKEND}/cost/monthly`, {
@@ -29,7 +29,7 @@ export function CostDashboard() {
         }
       })
       .catch(() => {});
-  }, [user, sessionCost]); // refetch when session cost changes (new message)
+  }, [user]); // only re-fetch if user identity changes, not on every message
 
   // Session stats
   const sessionMessages = messages.filter((m) => m.role === "assistant" && m.costUsd !== undefined);

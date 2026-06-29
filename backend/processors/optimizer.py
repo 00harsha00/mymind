@@ -8,10 +8,10 @@ Step 4 — Smart chunking (for large documents, keep top 3 relevant chunks)
 """
 
 import re
-from typing import Optional
 
 _nlp = None
-_lingua = None
+# None = not yet attempted; "fallback" = failed to load; PromptCompressor = loaded
+_compressor = None
 
 
 def _get_nlp():
@@ -22,16 +22,20 @@ def _get_nlp():
     return _nlp
 
 
-def _get_lingua():
-    global _lingua
-    if _lingua is None:
-        from llmlingua import PromptCompressor
-        _lingua = PromptCompressor(
-            model_name="microsoft/llmlingua-2-xlm-roberta-large-meetingbank",
-            use_llmlingua2=True,
-            device_map="cpu",
-        )
-    return _lingua
+def _get_compressor():
+    global _compressor
+    if _compressor is None:
+        try:
+            from llmlingua import PromptCompressor
+            _compressor = PromptCompressor(
+                model_name="microsoft/llmlingua-2-xlm-roberta-large-meetingbank",
+                use_llmlingua2=True,
+                device_map="cpu",
+            )
+        except Exception as e:
+            print(f"LLMLingua unavailable, using spaCy-only compression: {e}")
+            _compressor = "fallback"
+    return _compressor
 
 
 # ── Step 1: history summarization ─────────────────────────────────────────────
@@ -88,12 +92,14 @@ def clean_text(text: str) -> str:
 # ── Step 3: LLMLingua compression ────────────────────────────────────────────
 
 def compress_text(text: str, target_ratio: float = 0.5) -> str:
-    """Compress text to ~target_ratio of original using LLMLingua-2."""
+    """Compress text to ~target_ratio of original using LLMLingua-2; falls back to spaCy result."""
     if len(text) < 200:
         return text
+    compressor = _get_compressor()
+    if compressor == "fallback":
+        return text
     try:
-        lingua = _get_lingua()
-        result = lingua.compress_prompt(
+        result = compressor.compress_prompt(
             text,
             rate=target_ratio,
             force_tokens=["\n", "?", "!", "."],
